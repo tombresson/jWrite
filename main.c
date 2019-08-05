@@ -40,7 +40,7 @@ void jWriteTest()
 
 	printf("A JSON object example:\n\n" );
 
-	jwOpen( buffer, buflen, JW_OBJECT, JW_PRETTY );		// start root object
+	jwOpen( buffer, buflen, JW_OBJECT, JW_COMPACT);		// start root object
 
 	jwObj_string( "key", "value" );				// add object key:value pairs
 	jwObj_int( "int", 1 );

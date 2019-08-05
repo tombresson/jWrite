@@ -15,10 +15,6 @@
 
 #include "jWrite.h"
 
-//#include <stdint.h>			// definintion of uint32_t, int32_t
-typedef unsigned int uint32_t;
-typedef int int32_t;
-
 
 // the jWrite functions take the above jWriteControl structure pointer
 // to maintain state while writing a JSON string.
@@ -44,10 +40,11 @@ struct jWriteControl g_jWriteControl;			// global control struct
 //------------------------------------------
 // Internal functions
 //
-void jwPutch( JWC_DECL char c );
-void jwPutstr( JWC_DECL char *str );
-void jwPutraw( JWC_DECL char *str );
+void jwPutch( JWC_DECL const char c );
+void jwPutstr( JWC_DECL const char *str );
+void jwPutraw( JWC_DECL const char *str );
 void modp_itoa10(int32_t value, char* str);
+void modp_litoa10(int64_t value, char* str);
 void modp_dtoa2(double value, char* str, int prec);
 void jwPretty( JWC_DECL0 );
 enum jwNodeType jwPop( JWC_DECL0 );
@@ -115,6 +112,35 @@ int jwEnd( JWC_DECL0 )
 	return JWC(error);
 }
 
+//------------------------------------------
+// Returns the number of bytes written to the buffer
+// Will always return a positive value between 0 and the buffer length
+//
+int jwBytesWritten( JWC_DECL0 )
+{
+    // Do pointer math to determine the length of the buffer
+    // Buffer pointer is moved forward after every write
+    int bytes_written = ((JWC(bufp) - JWC(buffer)));
+
+    // Byte written should never be negative, unless something is wrong
+    if(bytes_written < 0)
+    {
+        bytes_written = 0;
+    }
+
+    // Returned value should never exceed the buffer length
+    return ((bytes_written > (int)JWC(buflen)) ? JWC(buflen) :  bytes_written);
+}
+
+//------------------------------------------
+// Returns the number of bytes available in the buffer
+// Will always return a positive value between 0 and the buffer length
+//
+int jwBytesRemaining( JWC_DECL0 )
+{
+    // Returned value should never exceed the buffer length
+    return (JWC(buflen) - jwBytesWritten(JWC_PARAM0));
+}
 
 //------------------------------------------
 // jwErrorPos
@@ -129,11 +155,11 @@ int jwErrorPos( JWC_DECL0 )
 //------------------------------------------
 // Object insert functions
 //
-int _jwObj( JWC_DECL char *key );
+int _jwObj( JWC_DECL const char *key );
 
 // put raw string to object (i.e. contents of rawtext without quotes)
 //
-void jwObj_raw( JWC_DECL char *key, char *rawtext )
+void jwObj_raw( JWC_DECL const char *key, const char *rawtext )
 {
 	if(_jwObj( JWC_PARAM key ) == JWRITE_OK)
 		jwPutraw( JWC_PARAM rawtext);
@@ -141,37 +167,43 @@ void jwObj_raw( JWC_DECL char *key, char *rawtext )
 
 // put "quoted" string to object
 //
-void jwObj_string( JWC_DECL char *key, char *value )
+void jwObj_string( JWC_DECL const char *key, const char *value )
 {
 	if(_jwObj( JWC_PARAM key ) == JWRITE_OK)
 		jwPutstr( JWC_PARAM value );
 }
 
-void jwObj_int( JWC_DECL char *key, int value )
+void jwObj_int( JWC_DECL const char *key, int32_t value )
 {
 	modp_itoa10( value, JWC(tmpbuf) );
 	jwObj_raw( JWC_PARAM key, JWC(tmpbuf) );
 }
 
-void jwObj_double( JWC_DECL char *key, double value )
+void jwObj_int64( JWC_DECL const char *key, int64_t value )
+{
+	modp_litoa10( value, JWC(tmpbuf) );
+	jwObj_raw( JWC_PARAM key, JWC(tmpbuf) );
+}
+
+void jwObj_double( JWC_DECL const char *key, double value )
 {
 	modp_dtoa2( value, JWC(tmpbuf), 6 );
 	jwObj_raw( JWC_PARAM key, JWC(tmpbuf) );
 }
 
-void jwObj_bool( JWC_DECL char *key, int oneOrZero )
+void jwObj_bool( JWC_DECL const char *key, bool value )
 {
-	jwObj_raw( JWC_PARAM key, (oneOrZero) ? "true" : "false" );
+	jwObj_raw( JWC_PARAM key, (value) ? "true" : "false" );
 }
 
-void jwObj_null( JWC_DECL char *key )
+void jwObj_null( JWC_DECL const char *key )
 {
 	jwObj_raw( JWC_PARAM key, "null" );
 }
 
 // put Object in Object
 //
-void jwObj_object( JWC_DECL char *key )
+void jwObj_object( JWC_DECL const char *key )
 {
 	if(_jwObj( JWC_PARAM key ) == JWRITE_OK)
 	{
@@ -182,7 +214,7 @@ void jwObj_object( JWC_DECL char *key )
 
 // put Array in Object
 //
-void jwObj_array( JWC_DECL char *key )
+void jwObj_array( JWC_DECL const char *key )
 {
 	if(_jwObj( JWC_PARAM key ) == JWRITE_OK)
 	{
@@ -198,7 +230,7 @@ int _jwArr( JWC_DECL0 );
 
 // put raw string to array (i.e. contents of rawtext without quotes)
 //
-void jwArr_raw( JWC_DECL char *rawtext )
+void jwArr_raw( JWC_DECL const char *rawtext )
 {
 	if(_jwArr( JWC_PARAM0 ) == JWRITE_OK)
 		jwPutraw( JWC_PARAM rawtext);
@@ -206,15 +238,21 @@ void jwArr_raw( JWC_DECL char *rawtext )
 
 // put "quoted" string to array
 //
-void jwArr_string( JWC_DECL char *value )
+void jwArr_string( JWC_DECL const char *value )
 {
 	if(_jwArr( JWC_PARAM0 ) == JWRITE_OK)
 		jwPutstr( JWC_PARAM value );
 }
 
-void jwArr_int( JWC_DECL int value )
+void jwArr_int( JWC_DECL int32_t value )
 {
 	modp_itoa10( value, JWC(tmpbuf) );
+	jwArr_raw( JWC_PARAM JWC(tmpbuf) );
+}
+
+void jwArr_int64( JWC_DECL int64_t value )
+{
+	modp_litoa10( value, JWC(tmpbuf) );
 	jwArr_raw( JWC_PARAM JWC(tmpbuf) );
 }
 
@@ -224,9 +262,9 @@ void jwArr_double( JWC_DECL double value )
 	jwArr_raw( JWC_PARAM JWC(tmpbuf) );
 }
 
-void jwArr_bool( JWC_DECL int oneOrZero )
+void jwArr_bool( JWC_DECL bool value )
 {
-	jwArr_raw( JWC_PARAM  (oneOrZero) ? "true" : "false" );
+	jwArr_raw( JWC_PARAM  (value) ? "true" : "false" );
 }
 
 void jwArr_null( JWC_DECL0 )
@@ -257,7 +295,7 @@ void jwArr_array( JWC_DECL0 )
 // jwErrorToString
 // - returns string describing error code
 //
-char *jwErrorToString( int err )
+const char *jwErrorToString( int err )
 {
 	switch( err )
 	{
@@ -309,7 +347,7 @@ enum jwNodeType jwPop( JWC_DECL0 )
 	return retval;
 }
 
-void jwPutch( JWC_DECL char c )
+void jwPutch( JWC_DECL const char c )
 {
 	if( (unsigned int)(JWC(bufp) - JWC(buffer)) >= JWC(buflen) )
 	{
@@ -321,7 +359,7 @@ void jwPutch( JWC_DECL char c )
 
 // put string enclosed in quotes
 //
-void jwPutstr( JWC_DECL char *str )
+void jwPutstr( JWC_DECL const char *str )
 {
 	jwPutch( JWC_PARAM '\"' );
 	while( *str != '\0' )
@@ -331,7 +369,7 @@ void jwPutstr( JWC_DECL char *str )
 
 // put raw string
 //
-void jwPutraw( JWC_DECL char *str )
+void jwPutraw( JWC_DECL const char *str )
 {
 	while( *str != '\0' )
 		jwPutch( JWC_PARAM *str++ );
@@ -344,7 +382,7 @@ void jwPutraw( JWC_DECL char *str )
 // - adds comma if reqd
 // - adds "key" :
 //
-int _jwObj( JWC_DECL char *key )
+int _jwObj( JWC_DECL const char *key )
 {
 	if(JWC(error) == JWRITE_OK)
 	{
@@ -393,8 +431,8 @@ int _jwArr( JWC_DECL0 )
  * <pre>
  * Copyright &copy; 2007, Nick Galbreath -- nickg [at] modp [dot] com
  * All rights reserved.
- * http://code.google.com/p/stringencoders/
- * Released under the bsd license.
+ * https://github.com/client9/stringencoders/
+ * Released under the MIT license.
  * </pre>
  */
 
@@ -414,7 +452,7 @@ void modp_itoa10(int32_t value, char* str)
 {
     char* wstr=str;
     // Take care of sign
-    unsigned int uvalue = (value < 0) ? -value : value;
+    uint32_t uvalue = (value < 0) ? (uint32_t)(-value) : (uint32_t)(value);
     // Conversion. Number is reversed.
     do *wstr++ = (char)(48 + (uvalue % 10)); while(uvalue /= 10);
     if (value < 0) *wstr++ = '-';
@@ -422,6 +460,23 @@ void modp_itoa10(int32_t value, char* str)
 
     // Reverse string
     strreverse(str,wstr-1);
+}
+
+void modp_litoa10(int64_t value, char* str)
+{
+    char* wstr = str;
+    uint64_t uvalue = (value < 0) ? (uint64_t)(-value) : (uint64_t)(value);
+
+    /* Conversion. Number is reversed. */
+    do
+        *wstr++ = (char)(48 + (uvalue % 10));
+    while (uvalue /= 10);
+    if (value < 0)
+        *wstr++ = '-';
+    *wstr = '\0';
+
+    /* Reverse string */
+	strreverse(str, wstr - 1);
 }
 
 /**
