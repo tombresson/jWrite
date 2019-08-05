@@ -41,7 +41,7 @@ struct jWriteControl g_jWriteControl;			// global control struct
 // Internal functions
 //
 void jwPutch( JWC_DECL const char c );
-void jwPutstr( JWC_DECL const char *str );
+void jwPutstr( JWC_DECL const char *const str );
 void jwPutraw( JWC_DECL const char *str );
 void modp_itoa10(int32_t value, char* str);
 void modp_litoa10(int64_t value, char* str);
@@ -49,7 +49,7 @@ void modp_dtoa2(double value, char* str, int prec);
 void jwPretty( JWC_DECL0 );
 enum jwNodeType jwPop( JWC_DECL0 );
 void jwPush( JWC_DECL enum jwNodeType nodeType );
-
+bool jwEscNeeded(const char *const str, const int idx);
 
 //------------------------------------------
 // jwOpen
@@ -57,7 +57,7 @@ void jwPush( JWC_DECL enum jwNodeType nodeType );
 // - initialise with user string buffer of length buflen
 // - isPretty=JW_PRETTY adds \n and spaces to prettify output (else JW_COMPACT)
 //
-void jwOpen( JWC_DECL char *buffer, unsigned int buflen, 
+void jwOpen( JWC_DECL char *buffer, unsigned int buflen,
 				   enum jwNodeType rootType, int isPretty )
 {
 	memset( buffer, 0, buflen );	// zap the whole destination buffer
@@ -299,7 +299,7 @@ const char *jwErrorToString( int err )
 {
 	switch( err )
 	{
-	case JWRITE_OK:         return "OK"; 
+	case JWRITE_OK:         return "OK";
 	case JWRITE_BUF_FULL:   return "output buffer full";
 	case JWRITE_NOT_ARRAY:	return "tried to write Array value into Object";
 	case JWRITE_NOT_OBJECT:	return "tried to write Object key/value into Array";
@@ -359,12 +359,64 @@ void jwPutch( JWC_DECL const char c )
 
 // put string enclosed in quotes
 //
-void jwPutstr( JWC_DECL const char *str )
+void jwPutstr( JWC_DECL const char *const str )
 {
+	const char *chr = str;
 	jwPutch( JWC_PARAM '\"' );
-	while( *str != '\0' )
-		jwPutch( JWC_PARAM *str++ );
+	while( *chr != '\0' )
+	{
+		if(jwEscNeeded(chr, (chr - str)))
+		{
+			jwPutch( JWC_PARAM '\\' );
+		}
+		jwPutch( JWC_PARAM *chr++ );
+	}
 	jwPutch( JWC_PARAM '\"' );
+}
+
+// Function checks to see if current character needs escaped
+// NOTE: Does not take into account if backslashes ('\') have already been escaped and will
+// NOTE: always indicate they need escaped.
+bool jwEscNeeded(const char *const str, const int idx)
+{
+	bool esc_needed = false;
+
+	// Need to escape quotes (") if not already escaped in the source string
+	if((*str == '"') && ((idx == 0) || (*(str - 1) != '\\')))
+	{
+		esc_needed = true;
+	}
+	// Need to escape the '\', if it's not already escaped in the source string or is
+	// not already being used to generate a special sequence
+	else if (*str == '\\')
+	{
+		const char *next = (str + 1);
+		// Next byte is string end, escape the character
+		if(*next == '\0')
+		{
+			esc_needed = true;
+		}
+		// If any of these characters follow the '\', it is an escape sequence
+		// and should not be escaped, otherwise it should be escaped.
+		else if(!((*next == 'b') ||
+				(*next == 'f') ||
+				(*next == 'n') ||
+				(*next == 'r') ||
+				(*next == 't')))
+		{
+			esc_needed = true;
+		}
+		else
+		{
+			// do nothing.
+		}
+	}
+	else
+	{
+		// do nothing.
+	}
+
+	return esc_needed;
 }
 
 // put raw string
